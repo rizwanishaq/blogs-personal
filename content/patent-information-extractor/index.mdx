@@ -1,0 +1,262 @@
+---
+title: "Patent Information Extractor"
+description: "  Revolutionize patent analysis with our powerful Python script. Extract precise product information along with corresponding units from patent documents. Unlock new insights and possibilities for various industries and intellectual property exploration."
+image: "../../public/blogs/kelly-sikkema--1_RZL8BGBM-unsplash.jpg"
+publishedAt: "2023-07-06"
+updatedAt: "2023-07-07"
+author: "Rizwan Ishaq"
+isPublished: true
+tags:
+  - Python
+  - OpenAI
+---
+
+In this blog post, we embark on a transformative journey to extract invaluable insights from patents. Our primary focus lies in extracting product, component, or compound values along with their respective units. This process holds immense potential for innovation across various industries. By mastering the intricacies of patent language, we empower researchers, inventors, and businesses to uncover hidden treasures within patent documents.
+
+## Project Setup
+
+Before diving into the development of app.py, it's essential to ensure all necessary APIs are installed, including langchain, kor, and dotenv. Once these dependencies are in place, follow these steps to set up the project:
+
+1. **Environment Variable Setup for Azure OpenAI**
+
+To kickstart the patent-analysis system, configuring the environment variables for Azure OpenAI is crucial. Follow this quick guide:
+
+2. **Create a Configuration file**:
+
+```bash
+touch .env
+```
+
+3. **Add Your Credentials**:
+   Open the .env file and input your Azure OpenAI credentials like this:
+
+```plaintext
+OPENAI_API_TYPE=azure
+OPENAI_API_KEY="put your open api key here"
+OPENAI_API_BASE="put the end point url here"
+OPENAI_API_VERSION = 2023-03-15-preview
+```
+
+Make sure to replace `"put your open api key here"` with your actual OpenAI API key and `"put the end point url here"` with the appropriate endpoint URL.
+
+With these variables properly set up, your patent-analysis system will be ready to function seamlessly with Azure OpenAI. This streamlined process ensures a hassle-free experience in harnessing the power of AI for patent analysis.
+
+4. **Utilty functions**: The `utils.py` ile encapsulates essential functions for extracting detailed component information from documents. The schema includes the name, property, value, unit, and the exact sentence from which the measurement was extracted.
+
+```python
+from pydantic import BaseModel, Field
+from kor import extract_from_documents, from_pydantic
+from typing import Tuple, Dict, List, Any, Callable
+
+class MeasurementDetails(BaseModel):
+    name: str = Field(
+        ...,
+        description="Name of the product, component, or compound being measured.",
+    )
+    property: str = Field(
+        ...,
+        description="Property being measured for the product, component, or compound.",
+    )
+    value: str = Field(
+        ...,
+        description="Value of the measured property for the product, component, or compound.",
+    )
+    unit: str = Field(
+        ...,
+        description="Unit of measurement for the property of the product, component, or compound.",
+    )
+    sentence: str = Field(
+        ...,
+        description="The exact sentence from which the measurement was extracted.",
+    )
+
+
+def get_schema() -> Tuple[Dict[str, Any], Callable]:
+    """
+    Get schema and validator for data extraction.
+
+    Returns:
+        tuple: (schema, validator)
+            - schema (dict): JSON schema for MeasurementDetails.
+            - validator (callable): Validator function.
+    """
+    schema, validator = from_pydantic(
+        MeasurementDetails,
+        description="Efficiently extract comprehensive component information from documents, encompassing the name, property, value, and measurement unit of the product, component, or compound.",
+        examples=[
+            (
+                "the resulting BaCO3 had a crystallite size of between about 20 and 40 nm.",
+                {
+                    "name": "BACO3",
+                    "property": "crystallite size",
+                    "value": "between 20 and 40",
+                    "unit": "nm",
+                    "sentence":"the resulting BaCO3 had a crystallite size of between about 20 and 40 nm."
+                },
+            ),
+            (
+                "Therefore, the average grain size of the cubic boron nitride of the present invention is preferably 0.5 to 5 µm.",
+                {
+                    "name": "CUBIC BORON NITRIDE",
+                    "property": "average grain size",
+                    "value": "0.5 to 5",
+                    "unit": "µm",
+                    "sentence":"Therefore, the average grain size of the cubic boron nitride of the present invention is preferably 0.5 to 5 µm."
+                }
+            )
+        ],
+        many=True,
+    )
+
+    return schema, validator
+
+```
+
+5. **Main Script**: The `app.py` file serves as the heart of our patent information extraction system. It expertly combines Azure OpenAI and other libraries to efficiently extract information from patent documents.
+
+```python
+import os
+import asyncio
+from dotenv import load_dotenv
+from utils import get_schema
+from langchain.llms import AzureOpenAI
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from kor import extract_from_documents, create_extraction_chain
+from langchain.document_loaders import WebBaseLoader
+from argparse import ArgumentParser
+
+load_dotenv()
+
+
+def extract_json_info(json_data: list) -> None:
+    """
+    Extracts information from JSON data and prints it.
+
+    Args:
+        json_data (list): List of JSON records.
+
+    Returns:
+        None
+    """
+    for record in json_data:
+        measurement_list = record.get('data', {}).get('measurementdetails', [])
+        for measurement in measurement_list:
+            name = measurement.get('name', '')
+            property = measurement.get('property', '')
+            value = measurement.get('value', '')
+            unit = measurement.get('unit', '')
+            sentence = measurement.get('sentence', '')
+
+            print(
+                f'Product: {name}\nProperty: {property}\nValue: {value}\nunit: {unit}\nsentence: {sentence}\n')
+
+
+async def main(patent_url: str) -> None:
+    """
+    Main function to extract information from a patent URL.
+
+    Args:
+        patent_url (str): URL of the patent to be analyzed.
+
+    Returns:
+        None
+    """
+    # Load patent documents from the given URL
+    loader = WebBaseLoader(patent_url)
+    docs = loader.load()
+
+    # Initialize Azure OpenAI language model
+    llm = AzureOpenAI(
+        temperature=0.0,
+        deployment_name="gpt-35-turbo",
+        model_name="gpt-35-turbo",
+    )
+
+    # Initialize text splitter for chunking documents
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=2000,
+        chunk_overlap=200,
+        length_function=len,
+    )
+
+    # Split documents into chunks for processing
+    docs_chunks = text_splitter.split_documents(docs)
+
+    # Get schema and validator for data extraction
+    schema, validator = get_schema()
+
+    # Create extraction chain
+    chain = create_extraction_chain(
+        llm,
+        schema,
+        encoder_or_encoder_class="json",
+        validator=validator,
+        input_formatter="triple_quotes",
+    )
+
+    # Extract information from documents
+    document_extraction_results = await extract_from_documents(
+        chain,
+        docs_chunks,
+        max_concurrency=10,
+        use_uid=False,
+        return_exceptions=True
+    )
+
+    # Print extracted information
+    extract_json_info(document_extraction_results)
+
+
+if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--patent_url", default='https://patents.google.com/patent/US8022010B2/en', help="patent url which we want to analyze")
+
+    args = parser.parse_args()
+    asyncio.run(main(args.patent_url))
+
+```
+
+6. **Usage**: Run the script to extract information from a patent URL:
+
+```bash
+python3 app.py --patent_url="https://patents.google.com/patent/US8022010B2/en"
+```
+
+## Results
+
+The following table showcases some of the results extracted from the patent:
+
+| Product             | Property         | Value             | Unit | Sentence                                                                                                                                                                                                                                                        |
+| ------------------- | ---------------- | ----------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ALKAINE EARTH OXIDE | crystallite size | between 20-40     | nm   | In one embodiment, the nitrogen oxide storage material comprises alkaline earth material supported on ceria particles having a crystallite size of between about 10 and 20 nm and the alkaline earth oxide having a crystallite size of between about 20-40 nm. |
+| BACO3               | crystallite size | between 20-40     | nm   | the resulting BaCO3 had a crystallite size of between about 20 and 40 nm.                                                                                                                                                                                       |
+| CERIA               | BET surface area | between 30 and 80 | m2/g | The BET surface area of the particulate mixture is between about 30 and 80 m2/g.                                                                                                                                                                                |
+
+## Additional Information
+
+**Data Schema**
+
+The utils.py file contains a Python script that defines a data schema and validation function for extracting comprehensive component information from documents. The schema includes the name, property, value, unit, and sentence of the product, component, or compound being measured.
+
+**Azure OpenAI Integration**
+
+The patent analysis system leverages Azure OpenAI, a powerful language model, to extract information from patent documents. The AzureOpenAI class is initialized with specific parameters, enabling accurate data extraction.
+
+**Text Splitting for Processing**
+
+The app.py script employs a text splitter to chunk documents for efficient processing. This ensures that the patent documents are processed in manageable segments, optimizing the extraction process.
+
+**WebBaseLoader for Patent Document Retrieval**
+
+The patent documents are loaded using the WebBaseLoader class, which retrieves documents from the specified URL. This step is crucial for subsequent analysis and extraction.
+
+**Script Customization**
+
+Feel free to customize the script to suit your specific use case or integrate additional features as needed. The provided code serves as a foundation for patent analysis, and further enhancements can be made to meet unique requirements.
+
+## Conclusion
+
+This blog post guides you through setting up and using the Patent Information Extractor, enabling you to extract precise information from patent documents. Revolutionize patent analysis with the power of Python and OpenAI.
+
+For a detailed walkthrough and the complete script, visit our [GitHub repository](https://github.com/rizwanishaq/basf_challenge).
