@@ -1,0 +1,614 @@
+---
+title: "Elevate Your Python Skills: Real-time Streaming Inference with NVIDIA Triton Inference Server"
+description: Learn how to harness the power of the Python backend in NVIDIA Triton Inference Server for seamless streaming inference.
+image: "../../public/blogs/pytriton-graphic2-1-960x540.png"
+publishedAt: "2023-07-09"
+updatedAt: "2023-07-09"
+author: "Rizwan Ishaq"
+isPublished: true
+tags:
+  - Python
+  - Triton Inference Server
+  - Streaming
+  - Machine learning
+---
+
+Tired of the conventional batch inference process? Ready to take your Python skills to the next level with real-time streaming inference? The answer lies in the NVIDIA Triton Inference Server!
+
+Leverage your Python expertise to deploy machine learning models in real-time, directly from your GPU or CPU. Triton's streaming inference capabilities empower you to process data as it's generated, eliminating the need to wait for batches to accumulate.
+
+In this comprehensive guide, I'll walk you through using the Python backend of Triton for streaming inference on images. Each step will be thoroughly explained, ensuring that even if you're new to Triton, you'll be able to get started with confidence.
+
+## Why Triton?
+
+Triton's Python backend provides a powerful toolkit for deploying and managing ML models. Its flexibility and efficiency make it an invaluable tool for data scientists and engineers alike.
+
+### Streamlining Inference
+
+Gone are the days of waiting for batches to accumulate. With Triton, you'll process data in real-time, keeping your applications responsive and dynamic.
+
+### GPU or CPU: Your Choice
+
+Triton seamlessly integrates with both GPUs and CPUs, giving you the freedom to choose the hardware that suits your needs.
+
+## Getting Started
+
+Prerequisites
+Before we begin, make sure you have the necessary tools and libraries installed. Don't worry, I'll guide you through it.
+
+### Setting Up Triton
+
+Step-by-step instructions on how to install and configure Triton on your system. Here are detailed step-by-step instructions on how to install and configure Triton on your system:
+
+- **System Requirements**:
+  Before you begin, ensure that your system meets the following requirements:
+
+  - A Linux-based system (Triton is primarily designed for Linux).
+  - Docker installed on your machine.
+  - A model in a format supported by Triton (like TensorFlow, ONNX, etc.).
+
+- **Download and Install Docker**:
+  Visit the official [Docker website](https://docs.docker.com/get-docker/) and download Docker for your operating system. Follow the installation instructions provided on the website.
+
+- **Pull Triton Docker Image**:
+  Open a terminal or command prompt and run the following command to pull the Triton Inference Server Docker image:
+
+```bash
+docker pull nvcr.io/nvidia/tritonserver:xx.yy.zz-py3
+```
+
+Replace `xx.yy.zz` with the version number you want to use (e.g., `21.11.0`).
+
+- **Create a Model Repository**:
+  Create a directory on your system where you will store the models that Triton will serve. For example, create a folder named `models`:
+
+```bash
+mkdir models
+```
+
+Place your model files (in a supported format) in this directory.
+
+- **Run Triton Container**:
+  Start a Triton container using the Docker image you downloaded. Replace `xx.yy.zz` with the version you pulled.
+
+```bash
+docker run --gpus all --rm -p8000:8000 -p8001:8001 -p8002:8002 --mount type=bind,source=$(pwd)/models,target=/models nvcr.io/nvidia/tritonserver:xx.yy.zz-py3 tritonserver --model-repository=/models
+```
+
+- `--gpus all`: Utilize all available GPUs (if applicable).
+- `-p8000:8000 -p8001:8001 -p8002:8002`: Map the Triton server ports.
+- `--mount type=bind,source=$(pwd)/models,target=/models`: Mount the models directory.
+- `--rm`: Remove the container when it's stopped.
+
+- **Verify Triton Installation**:
+  Open a web browser and visit http://localhost:8000. You should see the Triton server's status and health information.
+
+- **Deploying a Model**:
+  To deploy a model, place it in the `models` directory you created earlier. Triton will automatically detect and load it.
+
+- **Using Triton with Your Application**:
+  In your application code, connect to the Triton server using the appropriate client library (e.g., Triton Python Client) and send requests for inference.
+
+- **Additional Notes**:
+  - If you want to use a different model, ensure it's in a supported format (TensorFlow, ONNX, etc.) and place it in the `models` directory.
+  - For more advanced configurations, refer to the official [Triton documentation: https://github.com/triton-inference-server/server](https://github.com/triton-inference-server/server)
+
+### Implementing the Config.pbtxt
+
+In Triton Inference Server, a specific folder structure is required for model inference. Follow these steps to configure the Python backend for streaming:
+
+1. Create a folder named `models` (you can choose any name).
+2. Inside the `models` folder, create a sub-folder named `jpg_model` to represent the model name.
+3. Within `jpg_model`, create another folder named `1` to denote version 1.
+4. Include a `config.pbtxt` file for configuration details.
+
+Here's an example of the `config.pbtxt` file:
+
+```plaintext
+name: "jpg_model"
+backend: "python"
+max_batch_size: 0
+input [
+  {
+    name: "image"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  }
+]
+output [
+  {
+    name: "output_image"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  }
+
+]
+instance_group [{count: 1, kind: KIND_CPU}]
+
+sequence_batching {
+  max_sequence_idle_microseconds: 60000000
+  control_input {
+    name: "START"
+    control {
+      kind: CONTROL_SEQUENCE_START
+      int32_false_true: [0, 1]
+    }
+  }
+  control_input {
+    name: "READY"
+    control {
+      kind: CONTROL_SEQUENCE_READY
+      int32_false_true: [0, 1]
+    }
+  }
+  control_input {
+    name: "END"
+    control {
+      kind: CONTROL_SEQUENCE_END
+      int32_false_true: [0, 1]
+    }
+  }
+  control_input {
+    name: "CORRID"
+    control {
+      kind: CONTROL_SEQUENCE_CORRID
+      data_type: TYPE_UINT64
+    }
+  }
+}
+
+```
+
+Here's a simplified explanation of the config.pbtxt file:
+
+- `name: "jpg_model"`: Specifies the name of the model, in this case, it's named "jpg_model".
+
+- `backend: "python"`: Defines the backend for this model. In this configuration, it's set to use the Python backend.
+
+- `max_batch_size: 0`: Indicates the maximum batch size for the model. In this case, it's set to 0, meaning the model doesn't have a specific batch size constraint.
+
+- `input [...]`: Describes the input configuration for the model. It specifies:
+
+  - `name: "image"`: The name of the input, which is `image`.
+  - `data_type: TYPE_STRING`: The data type of the input, which is `TYPE_STRING`.
+  - `dims: [ 1 ]`: The dimensions of the input, in this case, it's set to a single dimension with size 1.
+
+- `output [...]`: Describes the output configuration for the model. It specifies:
+
+  - `name: "output_image"`: The name of the output, which is `output_image`.
+  - `data_type: TYPE_STRING`: The data type of the output, which is `TYPE_STRING`.
+  - `dims: [ 1 ]`: The dimensions of the output, in this case, it's set to a single dimension with size 1.
+
+- `instance_group [...]`: Defines the instance group configuration. In this case, it specifies one instance running on a CPU.
+
+- `sequence_batching [...]`: Specifies sequence batching parameters. It includes:
+
+  - `max_sequence_idle_microseconds: 60000000`: The maximum time (in microseconds) a sequence can be idle before it's considered complete.
+    Control inputs (`START`, `READY`, `END`, `CORRID`) with their respective control types and data types.
+
+This config.pbtxt file is crucial for configuring how Triton handles the input and output of the jpg_model with the Python backend. It defines the model's characteristics, including input and output details, instance group settings, and sequence batching behavior.
+
+### Implementing the Python Model
+
+Next, you'll need to implement the Python backend for Triton Inference Server. Create a `model.py` file inside the `1` folder with the following content:
+
+```python
+
+import json
+import triton_python_backend_utils as pb_utils
+from utils import jpg_base64_to_mat, mat_to_jpg_base64
+import numpy as np
+
+
+class TritonPythonModel:
+    """Triton Python Model for image processing."""
+
+    def initialize(self, args: dict) -> None:
+        """Initialize the model.
+
+        Args:
+            args (dict): Dictionary containing model information.
+
+                - model_config (str): JSON string containing the model configuration.
+        """
+
+        # Initialize the logger and model configuration
+        self.logger = pb_utils.Logger
+        self.model_config = json.loads(args['model_config'])
+
+        # Get output image configuration and data type
+        output_image_config = pb_utils.get_output_config_by_name(
+            self.model_config, "output_image")
+        self.output_image_dtype = pb_utils.triton_string_to_numpy(
+            output_image_config['data_type'])
+
+    def execute(self, requests: list) -> list:
+        """Process inference requests.
+
+        Args:
+            requests (List[pb_utils.InferenceRequest]): List of pb_utils.InferenceRequest.
+
+        Returns:
+            List[pb_utils.InferenceResponse]: List of pb_utils.InferenceResponse.
+        """
+        responses = []
+        for request in requests:
+            start_flag = pb_utils.get_input_tensor_by_name(
+                request, "START").as_numpy()[0]
+            end_flag = pb_utils.get_input_tensor_by_name(
+                request, "END").as_numpy()[0]
+
+            if end_flag or start_flag:
+                # Get sequence ID and log the action
+                sequence_id = pb_utils.get_input_tensor_by_name(
+                    request, "CORRID").as_numpy()[0]
+                action = "started" if start_flag else "stopped"
+                self.logger.log(
+                    f'Stream {sequence_id} {action}', self.logger.INFO)
+                inference_response = pb_utils.InferenceResponse(
+                    output_tensors=[])
+            else:
+                # Process the image and create response
+                image = pb_utils.get_input_tensor_by_name(request, "image")
+                image = image.as_numpy()[0].decode()
+                image = jpg_base64_to_mat(image)
+                out_image = mat_to_jpg_base64(image)
+
+                inference_response = pb_utils.InferenceResponse(
+                    output_tensors=[
+                        pb_utils.Tensor(
+                            "output_image",
+                            np.array(
+                                [out_image], dtype=self.output_image_dtype),
+                        )
+                    ])
+
+            responses.append(inference_response)
+
+        return responses
+
+    def finalize(self) -> None:
+        """Perform cleanups before model unloading."""
+        print('Cleaning up...')
+```
+
+The provided Python code is the implementation of a Triton Python Model for image processing. Let's break down each method and its purpose:
+
+- `initialize(self, args: dict) -> None:` This method is called when the model is being initialized. It takes a dictionary args as input, which contains the model information. Specifically, it expects a key model_config which should be a JSON string containing the model configuration. In this method, the logger is initialized and the model configuration is loaded from the provided JSON string. Additionally, it retrieves the output image configuration and its data type.
+
+- `execute(self, requests: list) -> list:` This method is responsible for processing inference requests. It takes a list of pb_utils.InferenceRequest objects as input, representing the batch of requests. It iterates through each request and checks for start and end flags. If a start or end flag is detected, it logs the action and creates an empty inference response. Otherwise, it processes the image, generates a response, and appends it to the list of responses.
+
+- `finalize(self) -> None:` This method is called before the model is unloaded. In this case, it simply prints a message indicating that clean up is being performed.
+
+This Python code defines a class `TritonPythonModel` that serves as a backend for Triton Inference Server. It contains methods for initialization, processing inference requests, and finalizing before unloading. The code demonstrates how to handle different aspects of inference processing, including logging, image manipulation, and response generation.
+
+in this the `utils.py` file has following structure
+
+```python
+import base64
+import cv2
+import numpy as np
+
+
+def mat_to_jpg_base64(mat: np.ndarray, quality: int = 95) -> str:
+    """Converts a NumPy array representing an image to base64-encoded JPEG image data.
+
+    Args:
+        mat (np.ndarray): Input image as a NumPy array.
+        quality (int, optional): Compression quality for JPEG encoding (0-100). Higher values mean better quality.
+            Defaults to 95.
+
+    Returns:
+        str: Base64-encoded image data.
+    """
+    # Set JPEG compression quality
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+
+    # Encode the image
+    encoded = cv2.imencode(".jpg", mat, encode_param)[1]
+    b64 = base64.b64encode(encoded)
+    return b64.decode('utf-8')
+
+
+def jpg_base64_to_mat(jpg_base64_data: str) -> np.ndarray:
+    """Converts base64-encoded JPEG image data to a NumPy array.
+
+    Args:
+        jpg_base64_data (str): Base64-encoded JPEG image data.
+
+    Returns:
+        np.ndarray: Image as a NumPy array.
+    """
+    img_string = base64.b64decode(jpg_base64_data)
+    image = np.frombuffer(img_string, dtype=np.uint8)
+    image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    return image
+```
+
+The provided Python code in utils.py contains utility functions for converting images between NumPy arrays and base64-encoded JPEG format. Let's break down each function and its purpose:
+
+- `mat_to_jpg_base64(mat: np.ndarray, quality: int = 95) -> str:` This function takes a NumPy array mat representing an image and an optional quality parameter for JPEG compression quality (default is 95). It converts the input image to a base64-encoded JPEG format and returns the resulting string. Here's how it works:
+
+  - It first sets the JPEG compression quality using cv2.IMWRITE_JPEG_QUALITY.
+  - It then encodes the image using cv2.imencode(), which returns a tuple where the second element is the encoded image data.
+  - The encoded data is then base64 encoded and returned as a string.
+
+- `jpg_base64_to_mat(jpg_base64_data: str) -> np.ndarray:` This function takes a base64-encoded JPEG image data as input. It decodes the base64 data to retrieve the binary image data, then converts it into a NumPy array representing an image. Here's how it works:
+  - It decodes the base64 data using base64.b64decode() to get the binary image data.
+  - It creates a NumPy array image from the binary data with data type np.uint8.
+  - It then uses cv2.imdecode() to decode the image data, resulting in a NumPy array representing the image.
+
+### Implementing the Python Client
+
+```python
+import cv2
+import numpy as np
+import subprocess
+import logging
+import argparse
+from uuid import uuid4
+from time import perf_counter
+from typing import List, Tuple
+from tritonclient.utils import np_to_triton_dtype
+import tritonclient.grpc as grpcclient
+
+from utils import unique_sequence_id, mat_to_jpg_base64, jpg_base64_to_mat
+
+
+
+DEFAULT_MODEL_NAME = "jpg_model"
+DEFAULT_TRITON_URL = "0.0.0.0:8001"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - Line:%(lineno)d -  %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger('WebPStream')
+
+
+class JpegStream:
+    """
+    A class for streaming video frames through a Triton Inference Server with a WebP compression model.
+
+    Args:
+        model_name (str, optional): Name of the WebP compression model. Defaults to "jpg_model".
+        triton_url (str, optional): URL of the Triton Inference Server. Defaults to "0.0.0.0:8001".
+
+    Attributes:
+        triton_client (grpcclient.InferenceServerClient): Triton Inference Server client.
+        model_name (str): Name of the WebP compression model.
+        sequence_id (np.uint64): Unique ID for the sequence.
+    """
+
+    def __init__(self, model_name: str = DEFAULT_MODEL_NAME, triton_url: str = DEFAULT_TRITON_URL) -> None:
+        """
+        Initializes a WebPStream object.
+
+        Args:
+            model_name (str, optional): Name of the WebP compression model. Defaults to "jpg_model".
+            triton_url (str, optional): URL of the Triton Inference Server. Defaults to "0.0.0.0:8001".
+        """
+        self.triton_client = grpcclient.InferenceServerClient(
+            url=triton_url, verbose=False
+        )
+        self.model_name = model_name
+        self.sequence_id = unique_sequence_id()
+
+    def _input_output(self, image: np.ndarray) -> Tuple[List[grpcclient.InferInput], List[grpcclient.InferRequestedOutput]]:
+        """
+        Sets up input and output configuration for Triton Inference.
+
+        Args:
+            image (np.ndarray): Input image.
+
+        Returns:
+            tuple: Input and output configurations.
+        """
+        inputs = [
+            grpcclient.InferInput(
+                "image",
+                image.shape,
+                np_to_triton_dtype(image.dtype)
+            ),
+        ]
+        outputs = [grpcclient.InferRequestedOutput("output_image")]
+        inputs[0].set_data_from_numpy(image)
+
+        return inputs, outputs
+
+    def start(self, sequence_start: bool = True, sequence_end: bool = False) -> None:
+        """
+        Starts the streaming process.
+
+        Args:
+            sequence_start (bool, optional): Indicates if this is the start of a sequence. Defaults to True.
+            sequence_end (bool, optional): Indicates if this is the end of a sequence. Defaults to False.
+        """
+        empty_image = np.array([1], dtype="object")
+
+        inputs, _ = self._input_output(empty_image)
+
+        _ = self.triton_client.infer(
+            model_name=self.model_name,
+            inputs=inputs,
+            request_id=f'{uuid4()}',
+            outputs=[],  # Empty response (no output expected for this request)
+            sequence_id=self.sequence_id,
+            sequence_start=sequence_start,
+            sequence_end=sequence_end,
+        )
+        logger.info(f'[✅] Stream: {self.sequence_id} - Started')
+
+    def close(self, sequence_start: bool = False, sequence_end: bool = True) -> None:
+        """
+        Closes the streaming process.
+
+        Args:
+            sequence_start (bool, optional): Indicates if this is the start of a sequence. Defaults to False.
+            sequence_end (bool, optional): Indicates if this is the end of a sequence. Defaults to True.
+        """
+        empty_image = np.array([1], dtype="object")
+
+        inputs, _ = self._input_output(empty_image)
+
+        _ = self.triton_client.infer(
+            model_name=self.model_name,
+            inputs=inputs,
+            request_id=f'{uuid4()}',
+            outputs=[],  # Empty response (no output expected for this request)
+            sequence_id=self.sequence_id,
+            sequence_start=sequence_start,
+            sequence_end=sequence_end,
+        )
+        logger.info(f'[✅] Stream: {self.sequence_id} - Closed')
+
+    def __call__(self, image: np.ndarray, sequence_start: bool = False, sequence_end: bool = False) -> np.ndarray:
+        """
+        Compresses a single frame and returns the result.
+
+        Args:
+            image (np.ndarray): Input image.
+            sequence_start (bool, optional): Indicates if this is the start of a sequence. Defaults to False.
+            sequence_end (bool, optional): Indicates if this is the end of a sequence. Defaults to False.
+
+        Returns:
+            np.ndarray: Compressed output image.
+        """
+        image = mat_to_jpg_base64(image)
+        image = np.array([image], dtype="object")
+
+        inputs, outputs = self._input_output(image)
+
+        response = self.triton_client.infer(
+            model_name=self.model_name,
+            inputs=inputs,
+            request_id=f'{uuid4()}',
+            outputs=outputs,
+            sequence_id=self.sequence_id,
+            sequence_start=sequence_start,
+            sequence_end=sequence_end,
+        )
+
+        output_image = response.as_numpy("output_image")[0]
+        output_image = jpg_base64_to_mat(output_image)
+
+        return output_image
+
+    def __enter__(self):
+        """
+        Method to enter the context.
+
+        Returns:
+            WebPStream: Returns the WebPStream object.
+        """
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """
+        Method to exit the context.
+
+        Args:
+            exc_type (type): Type of exception (if any).
+            exc_value (Exception): The exception instance raised (if any).
+            traceback (traceback): Traceback object (if any).
+        """
+        self.close()
+
+
+def run(args: argparse.Namespace) -> None:
+    """
+    Runs the WebPStream with Triton Inference Server.
+
+    Args:
+        args (argparse.Namespace): Command line arguments.
+    """
+    if args.triton_server:
+        triton_command = 'docker run --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 --gpus "device=0,1" --rm -p8000:8000 -p8001:8001 -p8002:8002 -v/path-to-models-folder:/models docker-name tritonserver --model-repository=/models --backend-config=tensorflow,version=2'
+        subprocess.run(triton_command, shell=True)
+
+    video_stream = cv2.VideoCapture(args.video_file)
+
+    with JpegStream(model_name=args.model_name, triton_url=args.triton_url) as stream:
+        try:
+            while True:
+                ret, frame = video_stream.read()
+                if not ret:
+                    break
+
+                start = perf_counter()  # Record start time
+                output_image = stream(frame)
+                logging.info(
+                    f"[✅] Done in {(perf_counter() - start) * 1000:.2f}ms")
+
+                cv2.imshow(f'{stream.sequence_id}', output_image)
+
+                if cv2.waitKey(5) & 0xFF == 27:
+                    break
+        except (Exception, KeyboardInterrupt) as e:
+            logger.exception(
+                f'[❌] Stream: {stream.sequence_id} - Stopped - Error: {e}')
+        finally:
+            video_stream.release()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='WebPStream with Triton Inference Server')
+    parser.add_argument('--model_name', type=str, default=DEFAULT_MODEL_NAME,
+                        help='Name of the WebP compression model')
+    parser.add_argument('--video_file', type=str,
+                        default='Felipe.mp4', help='Path to the video file')
+    parser.add_argument('--triton_url', type=str, default=DEFAULT_TRITON_URL,
+                        help='URL of the Triton Inference Server')
+    parser.add_argument('--triton_server', action='store_true',
+                        help='Start the Triton Inference Server Docker')
+
+    args = parser.parse_args()
+
+    run(args)
+```
+
+This Python code provides a framework for streaming video frames through a Triton Inference Server using a WebP compression model. Here's a simplified explanation:
+
+- Imports: The code starts by importing necessary libraries for image processing, handling subprocesses, logging, argument parsing, and Triton client functionality.
+
+- Constants:
+
+  - DEFAULT_MODEL_NAME: Defines the default name for the WebP compression model.
+  - DEFAULT_TRITON_URL: Specifies the default URL for the Triton Inference Server.
+
+- Logger Setup: Configures a logger to display information and errors during execution.
+
+- Class JpegStream:
+
+  - This class handles the streaming process. It interacts with the Triton Inference Server to compress video frames using a WebP model.
+    - `**init**`: Initializes the object with a Triton client, model name, and a unique sequence ID.
+    - `_input_output`: Sets up input and output configurations for Triton Inference.
+    - `start`: Begins the streaming process, indicating the start of a sequence.
+    - `close`: Closes the streaming process, indicating the end of a sequence.
+    - `**call**`: Compresses a single frame and returns the result.
+
+- Function `run`:
+
+  - This function handles the execution of the streaming process.
+  - It optionally starts the Triton Inference Server using Docker.
+  - It captures frames from a video, compresses them, and displays the results.
+  - Pressing the 'Esc' key exits the loop.
+
+- Command Line Arguments:
+  - The script can be run from the command line, accepting arguments like model name, video file path, Triton URL, and an option to start the Triton server.
+- Main Block:
+  - Parses the command line arguments.
+  - Calls the run function with the provided arguments.
+
+Overall, this code sets up a framework for streaming video frames through Triton using a WebP compression model. It allows for easy integration and customization for specific use cases.
+` The run function is the main entry point of the script. It takes command-line arguments (parsed by argparse) and orchestrates the operations. This includes starting the Triton server (if specified), opening a video stream, and processing frames through Triton Inference Server.
+
+## Conclusion
+
+With Triton Inference Server and Python backend, you can achieve real-time streaming inference, eliminating the need for batch processing. This powerful combination opens up new possibilities for dynamic and responsive machine learning applications. Start leveraging the capabilities of Triton and take your Python skills to the next level!
